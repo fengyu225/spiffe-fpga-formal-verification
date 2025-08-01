@@ -1,0 +1,644 @@
+File "spiffe-fpga.pv", line 186, characters 9-20:
+Warning: identifier trust_bundle rebound.
+File "spiffe-fpga.pv", line 417, characters 10-15:
+Warning: identifier design rebound.
+Linear part:
+ecdhe(x,pk(y)) = ecdhe(y,pk(x))
+Completing equations...
+Completed equations:
+ecdhe(x,pk(y)) = ecdhe(y,pk(x))
+Convergent part: No equation.
+Process 0 (that is, the initial process):
+{1}new sk_tenant: key;
+{2}let pk_tenant: key = pk(sk_tenant) in
+{3}new sk_fpga: key;
+{4}let pk_fpga: key = pk(sk_fpga) in
+{5}new sk_ca: key;
+{6}let pk_ca: key = pk(sk_ca) in
+{7}new sk_tee: key;
+{8}let pk_tee: key = pk(sk_tee) in
+{9}new sk_spiffe_ca: key;
+{10}let pk_spiffe_ca: key = pk(sk_spiffe_ca) in
+{11}new sk_manufacturer_ca: key;
+{12}let pk_manufacturer_ca: key = pk(sk_manufacturer_ca) in
+{13}new sk_aik: key;
+{14}let pk_aik: key = pk(sk_aik) in
+{15}new fpga_serial: bitstring;
+{16}new sk_ek: key;
+{17}let pk_ek: key = pk(sk_ek) in
+{18}let cert_tenant: cert = cert_create(pk_tenant,sk_ca) in
+{19}new region1: region_id;
+{20}new region2: region_id;
+{21}new sk_workload1: key;
+{22}new sk_workload2: key;
+(
+    {23}!
+    {24}let sk_spiffe_ca_1: key = sk_spiffe_ca in
+    {25}let pk_spiffe_ca_1: key = pk(sk_spiffe_ca_1) in
+    {26}let trust_bundle_1: trust_bundle = create_trust_bundle(pk_spiffe_ca_1) in
+    {27}out(public_channel, trust_bundle_1);
+    (
+        {28}!
+        {29}in(public_channel, (aik_pub: key,aik_cert: cert,ek_cert: cert,ek_pub: key,signed_quote: bitstring,fpga_nonce: nonce,fpga_serial_1: bitstring));
+        {30}if ek_cert_verify(ek_cert,fpga_serial_1,pk_manufacturer_ca) then
+        {31}if cert_verify(aik_cert,ek_pub) then
+        {32}if (ek_cert_get_key(ek_cert) = ek_pub) then
+        {33}if (cert_get_key(aik_cert) = aik_pub) then
+        {34}let quote_data: bitstring = tuple3_to_bitstring(pk_to_bitstring(aik_pub),nonce_to_bitstring(fpga_nonce),fpga_serial_1) in
+        {35}if verify(signed_quote,quote_data,aik_pub) then
+        {36}event NodeAttestationVerified(fpga_serial_1,aik_pub);
+        {37}let node_id: spiffe_id = create_node_spiffe_id(fpga_serial_1) in
+        {38}new current_time: timestamp;
+        {39}let node_svid: svid = create_svid(node_id,aik_pub,current_time,sk_spiffe_ca_1) in
+        {40}event NodeSVIDIssued(node_id,aik_pub);
+        {41}out(public_channel, node_svid)
+    ) | (
+        {42}!
+        {43}in(public_channel, (runtime_hash: hash,workload_pub: key,node_svid_1: svid,rid: region_id,tee_doc: attestation,signed_evidence: bitstring,fpga_serial_wa: bitstring,aik_pub_wa: key));
+        {44}let node_id_wa: spiffe_id = create_node_spiffe_id(fpga_serial_wa) in
+        {45}new current_time_wa: timestamp;
+        {46}if verify_svid(node_svid_1,node_id_wa,aik_pub_wa,current_time_wa,pk_spiffe_ca_1) then
+        {47}let evidence_data: bitstring = tuple3_to_bitstring(hash_to_bitstring(runtime_hash),pk_to_bitstring(workload_pub),region_to_bitstring(rid)) in
+        {48}if verify(signed_evidence,evidence_data,aik_pub_wa) then
+        {49}event WorkloadAttestationVerified(runtime_hash,rid,workload_pub);
+        {50}let workload_id: spiffe_id = create_workload_spiffe_id(fpga_serial_wa,rid,runtime_hash) in
+        {51}let workload_svid: svid = create_svid(workload_id,workload_pub,current_time_wa,sk_spiffe_ca_1) in
+        {52}event WorkloadSVIDIssued(workload_id,rid,workload_pub);
+        {53}out(public_channel, workload_svid)
+    )
+) | (
+    {54}!
+    {55}let sk_tenant_1: key = sk_tenant in
+    {56}let design_1: bitstring = secret_design in
+    {57}in(public_channel, (tee_pk: key,tee_nonce: nonce,tee_attestation: bitstring));
+    {58}let tee_data: bitstring = tuple3_to_bitstring(pk_to_bitstring(tee_pk),nonce_to_bitstring(tee_nonce),validated) in
+    {59}if verify(tee_attestation,tee_data,pk_tee) then
+    {60}event TenantVerifiesTEE(tee_pk,tee_nonce,tee_attestation);
+    {61}new session_id: bitstring;
+    {62}new tenant_nonce: nonce;
+    {63}let design_data: bitstring = tuple3_to_bitstring(design_1,nonce_to_bitstring(tenant_nonce),session_id) in
+    {64}let signed_design: bitstring = sign(design_data,sk_tenant_1) in
+    {65}let encrypted_design: bitstring = aenc((design_1,signed_design),tee_pk) in
+    {66}let signed_nonce: bitstring = sign(nonce_to_bitstring(tee_nonce),sk_tenant_1) in
+    {67}event TenantSendsDesign(design_1,tenant_nonce,session_id);
+    {68}out(public_channel, (encrypted_design,signed_nonce,cert_tenant,tenant_nonce,session_id));
+    {69}in(public_channel, validation_result: attestation);
+    {70}event TenantReceivesAttestation(validation_result);
+    {71}new deployment_request: bitstring;
+    {72}event TenantRequestsDeployment(deployment_request);
+    {73}let request_data: bitstring = tuple2_to_bitstring(session_id,deployment_request) in
+    {74}let signed_request: bitstring = sign(request_data,sk_tenant_1) in
+    {75}out(public_channel, (session_id,deployment_request,signed_request,cert_tenant));
+    {76}in(public_channel, (fpga_ecdhe_pub: key,fpga_nonce_1: nonce,signed_fpga_auth: bitstring,fpga_aik_pub: key));
+    {77}if (fpga_aik_pub = pk_aik) then
+    {78}let fpga_auth_data: bitstring = tuple3_to_bitstring(pk_to_bitstring(fpga_ecdhe_pub),nonce_to_bitstring(fpga_nonce_1),session_id) in
+    {79}if verify(signed_fpga_auth,fpga_auth_data,fpga_aik_pub) then
+    {80}new tenant_ecdhe_sk: key;
+    {81}let tenant_ecdhe_pub: key = pk(tenant_ecdhe_sk) in
+    {82}new tenant_nonce_deploy: nonce;
+    {83}out(public_channel, (tenant_ecdhe_pub,tenant_nonce_deploy));
+    {84}let shared_secret: bitstring = ecdhe(tenant_ecdhe_sk,fpga_ecdhe_pub) in
+    {85}let shared_key: key = kdf(shared_secret) in
+    {86}let encrypted_bitstream: bitstring = senc(design_1,shared_key) in
+    {87}out(public_channel, (encrypted_bitstream,validation_result))
+) | (
+    {88}!
+    {89}let sk_aik_1: key = sk_aik in
+    {90}let sk_ek_1: key = sk_ek in
+    {91}let sk_manufacturer_ca_1: key = sk_manufacturer_ca in
+    {92}let fpga_serial_2: bitstring = fpga_serial in
+    {93}let design_2: bitstring = secret_design in
+    {94}let aik_cert_1: cert = cert_create(pk(sk_aik_1),sk_ek_1) in
+    {95}let ek_cert_1: cert = ek_cert_create(pk(sk_ek_1),fpga_serial_2,sk_manufacturer_ca_1) in
+    {96}new fpga_nonce_2: nonce;
+    {97}let quote_data_1: bitstring = tuple3_to_bitstring(pk_to_bitstring(pk(sk_aik_1)),nonce_to_bitstring(fpga_nonce_2),fpga_serial_2) in
+    {98}let signed_quote_1: bitstring = sign(quote_data_1,sk_aik_1) in
+    {99}event NodeAttestationStarted(fpga_serial_2,pk(sk_aik_1),fpga_nonce_2);
+    {100}out(public_channel, (pk(sk_aik_1),aik_cert_1,ek_cert_1,pk(sk_ek_1),signed_quote_1,fpga_nonce_2,fpga_serial_2));
+    {101}in(public_channel, node_svid_2: svid);
+    {102}in(public_channel, (session_id_1: bitstring,deployment_request_1: bitstring,signed_request_1: bitstring,cert_tenant_1: cert));
+    {103}if cert_verify(cert_tenant_1,pk_ca) then
+    {104}let request_data_1: bitstring = tuple2_to_bitstring(session_id_1,deployment_request_1) in
+    {105}if verify(signed_request_1,request_data_1,pk_tenant) then
+    {106}event FPGAAllocated(deployment_request_1);
+    {107}new fpga_ecdhe_sk: key;
+    {108}let fpga_ecdhe_pub_1: key = pk(fpga_ecdhe_sk) in
+    {109}new fpga_nonce_deploy: nonce;
+    {110}let fpga_auth_data_1: bitstring = tuple3_to_bitstring(pk_to_bitstring(fpga_ecdhe_pub_1),nonce_to_bitstring(fpga_nonce_deploy),session_id_1) in
+    {111}let signed_fpga_auth_1: bitstring = sign(fpga_auth_data_1,sk_aik_1) in
+    {112}out(public_channel, (fpga_ecdhe_pub_1,fpga_nonce_deploy,signed_fpga_auth_1,pk(sk_aik_1)));
+    {113}in(public_channel, (tenant_ecdhe_pub_1: key,tenant_nonce_1: nonce));
+    {114}let shared_secret_1: bitstring = ecdhe(fpga_ecdhe_sk,tenant_ecdhe_pub_1) in
+    {115}let shared_key_1: key = kdf(shared_secret_1) in
+    {116}in(public_channel, (encrypted_bitstream_1: bitstring,tee_attestation_1: attestation));
+    {117}let bitstream: bitstring = sdec(encrypted_bitstream_1,shared_key_1) in
+    {118}let design_hash: hash = sha384(bitstream) in
+    {119}new current_time_verify: timestamp;
+    {120}let tenant_id: bitstring = pk_to_bitstring(pk_tenant) in
+    {121}if verify_attestation(tee_attestation_1,design_hash,validated,tenant_id,current_time_verify) then
+    {122}event FPGAReceivesBitstream(bitstream);
+    {123}event FPGAVerifiesBitstream(bitstream,design_hash);
+    {124}event FPGAConfigured(bitstream);
+    {125}new rid_1: region_id;
+    {126}new region_nonce: nonce;
+    {127}let k_region: key = hkdf(sk_aik_1,tuple3_to_bitstring(region_to_bitstring(rid_1),nonce_to_bitstring(region_nonce),fpga_serial_2)) in
+    {128}event RegionKeyGenerated(rid_1,k_region);
+    {129}out(ps_pl_channel, (rid_1,k_region));
+    {130}in(ps_pl_channel, encrypted_request: bitstring);
+    {131}let (request_type: bitstring,workload_nonce: nonce,request_rid: region_id) = sdec(encrypted_request,k_region) in
+    {132}if (request_rid = rid_1) then
+    {133}new challenge_nonce: nonce;
+    {134}event WorkloadChallengeIssued(rid_1,challenge_nonce);
+    {135}out(ps_pl_channel, senc(nonce_to_bitstring(challenge_nonce),k_region));
+    {136}in(ps_pl_channel, encrypted_response: bitstring);
+    {137}let (signed_response: bitstring,workload_pub_1: key) = sdec(encrypted_response,k_region) in
+    {138}let challenge_data: bitstring = tuple3_to_bitstring(nonce_to_bitstring(challenge_nonce),pk_to_bitstring(workload_pub_1),region_to_bitstring(rid_1)) in
+    {139}if verify(signed_response,challenge_data,workload_pub_1) then
+    {140}event WorkloadChallengeResponse(rid_1,challenge_nonce,workload_pub_1);
+    {141}let runtime_hash_1: hash = sha384(bitstream) in
+    {142}event RuntimeMeasurement(rid_1,runtime_hash_1);
+    {143}let evidence_data_1: bitstring = tuple3_to_bitstring(hash_to_bitstring(runtime_hash_1),pk_to_bitstring(workload_pub_1),region_to_bitstring(rid_1)) in
+    {144}let signed_evidence_1: bitstring = sign(evidence_data_1,sk_aik_1) in
+    {145}out(public_channel, (runtime_hash_1,workload_pub_1,node_svid_2,rid_1,tee_attestation_1,signed_evidence_1,fpga_serial_2,pk(sk_aik_1)))
+) | (
+    {146}!
+    {147}let sk_tee_1: key = sk_tee in
+    {148}new tee_transport_sk: key;
+    {149}let tee_transport_pk: key = pk(tee_transport_sk) in
+    {150}new tee_nonce_1: nonce;
+    {151}let tee_nonce_bits: bitstring = nonce_to_bitstring(tee_nonce_1) in
+    {152}let tee_data_1: bitstring = tuple3_to_bitstring(pk_to_bitstring(tee_transport_pk),tee_nonce_bits,validated) in
+    {153}let tee_attestation_2: bitstring = sign(tee_data_1,sk_tee_1) in
+    {154}event TEEProvidesAttestation(tee_transport_pk,tee_nonce_1,tee_attestation_2);
+    {155}out(public_channel, (tee_transport_pk,tee_nonce_1,tee_attestation_2));
+    {156}in(public_channel, (encrypted_design_1: bitstring,signed_nonce_1: bitstring,cert_tenant_2: cert,tenant_nonce_2: nonce,session_id_2: bitstring));
+    {157}if cert_verify(cert_tenant_2,pk_ca) then
+    {158}let verified_nonce_bits: bitstring = nonce_to_bitstring(tee_nonce_1) in
+    {159}if verify(signed_nonce_1,verified_nonce_bits,pk_tenant) then
+    {160}let (design_3: bitstring,signed_design_1: bitstring) = adec(encrypted_design_1,tee_transport_sk) in
+    {161}let design_data_1: bitstring = tuple3_to_bitstring(design_3,nonce_to_bitstring(tenant_nonce_2),session_id_2) in
+    {162}if verify(signed_design_1,design_data_1,pk_tenant) then
+    {163}event TEEReceivesDesign(design_3,tenant_nonce_2,session_id_2);
+    {164}let design_hash_1: hash = sha384(design_3) in
+    {165}event TEEValidatesDesign(design_3,design_hash_1);
+    {166}new current_time_1: timestamp;
+    {167}let tenant_id_1: bitstring = pk_to_bitstring(pk_tenant) in
+    {168}let validation_result_1: attestation = create_attestation(design_hash_1,validated,tenant_id_1,current_time_1) in
+    {169}out(public_channel, validation_result_1)
+) | (
+    {170}!
+    {171}let sk_workload: key = sk_workload1 in
+    {172}let rid_2: region_id = region1 in
+    {173}let fpga_serial_3: bitstring = fpga_serial in
+    {174}in(ps_pl_channel, (received_rid: region_id,k_region_1: key));
+    {175}if (received_rid = rid_2) then
+    {176}new workload_nonce_1: nonce;
+    {177}let request: bitstring = (workload_attestor_type,workload_nonce_1,rid_2) in
+    {178}event WorkloadAttestationRequested(rid_2,pk(sk_workload),workload_nonce_1);
+    {179}out(ps_pl_channel, senc(request,k_region_1));
+    {180}in(ps_pl_channel, encrypted_challenge: bitstring);
+    {181}let challenge_nonce_1: bitstring = sdec(encrypted_challenge,k_region_1) in
+    {182}let challenge_data_1: bitstring = tuple3_to_bitstring(challenge_nonce_1,pk_to_bitstring(pk(sk_workload)),region_to_bitstring(rid_2)) in
+    {183}let response: bitstring = sign(challenge_data_1,sk_workload) in
+    {184}out(ps_pl_channel, senc((response,pk(sk_workload)),k_region_1));
+    {185}in(public_channel, workload_svid_1: svid);
+    {186}new tls_eph_sk: key;
+    {187}let tls_eph_pub: key = pk(tls_eph_sk) in
+    {188}out(public_channel, (workload_svid_1,tls_eph_pub));
+    {189}in(public_channel, (peer_svid: svid,peer_tls_pub: key));
+    {190}new current_time_2: timestamp;
+    {191}new peer_rid: region_id;
+    {192}new peer_hash: hash;
+    {193}let peer_id: spiffe_id = create_workload_spiffe_id(fpga_serial_3,peer_rid,peer_hash) in
+    {194}new peer_workload_key: key;
+    {195}if verify_svid(peer_svid,peer_id,peer_workload_key,current_time_2,pk_spiffe_ca) then
+    {196}let tls_secret: bitstring = ecdhe(tls_eph_sk,peer_tls_pub) in
+    {197}let session_key: key = kdf(tls_secret) in
+    {198}let my_id: spiffe_id = create_workload_spiffe_id(fpga_serial_3,rid_2,sha384(fpga_serial_3)) in
+    {199}event mTLSEstablished(my_id,peer_id);
+    {200}new message: bitstring;
+    {201}out(public_channel, senc(message,session_key))
+) | (
+    {202}!
+    {203}let sk_workload_1: key = sk_workload2 in
+    {204}let rid_3: region_id = region2 in
+    {205}let fpga_serial_4: bitstring = fpga_serial in
+    {206}in(ps_pl_channel, (received_rid_1: region_id,k_region_2: key));
+    {207}if (received_rid_1 = rid_3) then
+    {208}new workload_nonce_2: nonce;
+    {209}let request_1: bitstring = (workload_attestor_type,workload_nonce_2,rid_3) in
+    {210}event WorkloadAttestationRequested(rid_3,pk(sk_workload_1),workload_nonce_2);
+    {211}out(ps_pl_channel, senc(request_1,k_region_2));
+    {212}in(ps_pl_channel, encrypted_challenge_1: bitstring);
+    {213}let challenge_nonce_2: bitstring = sdec(encrypted_challenge_1,k_region_2) in
+    {214}let challenge_data_2: bitstring = tuple3_to_bitstring(challenge_nonce_2,pk_to_bitstring(pk(sk_workload_1)),region_to_bitstring(rid_3)) in
+    {215}let response_1: bitstring = sign(challenge_data_2,sk_workload_1) in
+    {216}out(ps_pl_channel, senc((response_1,pk(sk_workload_1)),k_region_2));
+    {217}in(public_channel, workload_svid_2: svid);
+    {218}new tls_eph_sk_1: key;
+    {219}let tls_eph_pub_1: key = pk(tls_eph_sk_1) in
+    {220}out(public_channel, (workload_svid_2,tls_eph_pub_1));
+    {221}in(public_channel, (peer_svid_1: svid,peer_tls_pub_1: key));
+    {222}new current_time_3: timestamp;
+    {223}new peer_rid_1: region_id;
+    {224}new peer_hash_1: hash;
+    {225}let peer_id_1: spiffe_id = create_workload_spiffe_id(fpga_serial_4,peer_rid_1,peer_hash_1) in
+    {226}new peer_workload_key_1: key;
+    {227}if verify_svid(peer_svid_1,peer_id_1,peer_workload_key_1,current_time_3,pk_spiffe_ca) then
+    {228}let tls_secret_1: bitstring = ecdhe(tls_eph_sk_1,peer_tls_pub_1) in
+    {229}let session_key_1: key = kdf(tls_secret_1) in
+    {230}let my_id_1: spiffe_id = create_workload_spiffe_id(fpga_serial_4,rid_3,sha384(fpga_serial_4)) in
+    {231}event mTLSEstablished(my_id_1,peer_id_1);
+    {232}new message_1: bitstring;
+    {233}out(public_channel, senc(message_1,session_key_1))
+)
+
+File "spiffe-fpga.pv", line 133, characters 37-39:
+Warning: identifier sid rebound.
+File "spiffe-fpga.pv", line 137, characters 37-39:
+Warning: identifier sid rebound.
+File "spiffe-fpga.pv", line 141, characters 29-31:
+Warning: identifier sid rebound.
+--  Process 1 (that is, process 0, with let moved downwards):
+{1}new sk_tenant: key;
+{3}new sk_fpga: key;
+{5}new sk_ca: key;
+{7}new sk_tee: key;
+{9}new sk_spiffe_ca: key;
+{11}new sk_manufacturer_ca: key;
+{13}new sk_aik: key;
+{15}new fpga_serial: bitstring;
+{16}new sk_ek: key;
+{19}new region1: region_id;
+{20}new region2: region_id;
+{21}new sk_workload1: key;
+{22}new sk_workload2: key;
+(
+    {23}!
+    {24}let sk_spiffe_ca_1: key = sk_spiffe_ca in
+    {25}let pk_spiffe_ca_1: key = pk(sk_spiffe_ca_1) in
+    {26}let trust_bundle_1: trust_bundle = create_trust_bundle(pk_spiffe_ca_1) in
+    {27}out(public_channel, trust_bundle_1);
+    (
+        {28}!
+        {29}in(public_channel, (aik_pub: key,aik_cert: cert,ek_cert: cert,ek_pub: key,signed_quote: bitstring,fpga_nonce: nonce,fpga_serial_1: bitstring));
+        {12}let pk_manufacturer_ca: key = pk(sk_manufacturer_ca) in
+        {30}if ek_cert_verify(ek_cert,fpga_serial_1,pk_manufacturer_ca) then
+        {31}if cert_verify(aik_cert,ek_pub) then
+        {32}if (ek_cert_get_key(ek_cert) = ek_pub) then
+        {33}if (cert_get_key(aik_cert) = aik_pub) then
+        {34}let quote_data: bitstring = tuple3_to_bitstring(pk_to_bitstring(aik_pub),nonce_to_bitstring(fpga_nonce),fpga_serial_1) in
+        {35}if verify(signed_quote,quote_data,aik_pub) then
+        {36}event NodeAttestationVerified(fpga_serial_1,aik_pub);
+        {38}new current_time: timestamp;
+        {37}let node_id: spiffe_id = create_node_spiffe_id(fpga_serial_1) in
+        {40}event NodeSVIDIssued(node_id,aik_pub);
+        {39}let node_svid: svid = create_svid(node_id,aik_pub,current_time,sk_spiffe_ca_1) in
+        {41}out(public_channel, node_svid)
+    ) | (
+        {42}!
+        {43}in(public_channel, (runtime_hash: hash,workload_pub: key,node_svid_1: svid,rid: region_id,tee_doc: attestation,signed_evidence: bitstring,fpga_serial_wa: bitstring,aik_pub_wa: key));
+        {45}new current_time_wa: timestamp;
+        {44}let node_id_wa: spiffe_id = create_node_spiffe_id(fpga_serial_wa) in
+        {46}if verify_svid(node_svid_1,node_id_wa,aik_pub_wa,current_time_wa,pk_spiffe_ca_1) then
+        {47}let evidence_data: bitstring = tuple3_to_bitstring(hash_to_bitstring(runtime_hash),pk_to_bitstring(workload_pub),region_to_bitstring(rid)) in
+        {48}if verify(signed_evidence,evidence_data,aik_pub_wa) then
+        {49}event WorkloadAttestationVerified(runtime_hash,rid,workload_pub);
+        {50}let workload_id: spiffe_id = create_workload_spiffe_id(fpga_serial_wa,rid,runtime_hash) in
+        {52}event WorkloadSVIDIssued(workload_id,rid,workload_pub);
+        {51}let workload_svid: svid = create_svid(workload_id,workload_pub,current_time_wa,sk_spiffe_ca_1) in
+        {53}out(public_channel, workload_svid)
+    )
+) | (
+    {2}let pk_tenant: key = pk(sk_tenant) in
+    (
+        {54}!
+        {57}in(public_channel, (tee_pk: key,tee_nonce: nonce,tee_attestation: bitstring));
+        {58}let tee_data: bitstring = tuple3_to_bitstring(pk_to_bitstring(tee_pk),nonce_to_bitstring(tee_nonce),validated) in
+        {8}let pk_tee: key = pk(sk_tee) in
+        {59}if verify(tee_attestation,tee_data,pk_tee) then
+        {60}event TenantVerifiesTEE(tee_pk,tee_nonce,tee_attestation);
+        {61}new session_id: bitstring;
+        {62}new tenant_nonce: nonce;
+        {56}let design_1: bitstring = secret_design in
+        {67}event TenantSendsDesign(design_1,tenant_nonce,session_id);
+        {55}let sk_tenant_1: key = sk_tenant in
+        {66}let signed_nonce: bitstring = sign(nonce_to_bitstring(tee_nonce),sk_tenant_1) in
+        {63}let design_data: bitstring = tuple3_to_bitstring(design_1,nonce_to_bitstring(tenant_nonce),session_id) in
+        {64}let signed_design: bitstring = sign(design_data,sk_tenant_1) in
+        {65}let encrypted_design: bitstring = aenc((design_1,signed_design),tee_pk) in
+        {18}let cert_tenant: cert = cert_create(pk_tenant,sk_ca) in
+        {68}out(public_channel, (encrypted_design,signed_nonce,cert_tenant,tenant_nonce,session_id));
+        {69}in(public_channel, validation_result: attestation);
+        {70}event TenantReceivesAttestation(validation_result);
+        {71}new deployment_request: bitstring;
+        {72}event TenantRequestsDeployment(deployment_request);
+        {73}let request_data: bitstring = tuple2_to_bitstring(session_id,deployment_request) in
+        {74}let signed_request: bitstring = sign(request_data,sk_tenant_1) in
+        {75}out(public_channel, (session_id,deployment_request,signed_request,cert_tenant));
+        {76}in(public_channel, (fpga_ecdhe_pub: key,fpga_nonce_1: nonce,signed_fpga_auth: bitstring,fpga_aik_pub: key));
+        {14}let pk_aik: key = pk(sk_aik) in
+        {77}if (fpga_aik_pub = pk_aik) then
+        {78}let fpga_auth_data: bitstring = tuple3_to_bitstring(pk_to_bitstring(fpga_ecdhe_pub),nonce_to_bitstring(fpga_nonce_1),session_id) in
+        {79}if verify(signed_fpga_auth,fpga_auth_data,fpga_aik_pub) then
+        {80}new tenant_ecdhe_sk: key;
+        {82}new tenant_nonce_deploy: nonce;
+        {81}let tenant_ecdhe_pub: key = pk(tenant_ecdhe_sk) in
+        {83}out(public_channel, (tenant_ecdhe_pub,tenant_nonce_deploy));
+        {84}let shared_secret: bitstring = ecdhe(tenant_ecdhe_sk,fpga_ecdhe_pub) in
+        {85}let shared_key: key = kdf(shared_secret) in
+        {86}let encrypted_bitstream: bitstring = senc(design_1,shared_key) in
+        {87}out(public_channel, (encrypted_bitstream,validation_result))
+    ) | (
+        {6}let pk_ca: key = pk(sk_ca) in
+        (
+            {88}!
+            {96}new fpga_nonce_2: nonce;
+            {92}let fpga_serial_2: bitstring = fpga_serial in
+            {89}let sk_aik_1: key = sk_aik in
+            {99}event NodeAttestationStarted(fpga_serial_2,pk(sk_aik_1),fpga_nonce_2);
+            {97}let quote_data_1: bitstring = tuple3_to_bitstring(pk_to_bitstring(pk(sk_aik_1)),nonce_to_bitstring(fpga_nonce_2),fpga_serial_2) in
+            {98}let signed_quote_1: bitstring = sign(quote_data_1,sk_aik_1) in
+            {91}let sk_manufacturer_ca_1: key = sk_manufacturer_ca in
+            {90}let sk_ek_1: key = sk_ek in
+            {95}let ek_cert_1: cert = ek_cert_create(pk(sk_ek_1),fpga_serial_2,sk_manufacturer_ca_1) in
+            {94}let aik_cert_1: cert = cert_create(pk(sk_aik_1),sk_ek_1) in
+            {100}out(public_channel, (pk(sk_aik_1),aik_cert_1,ek_cert_1,pk(sk_ek_1),signed_quote_1,fpga_nonce_2,fpga_serial_2));
+            {101}in(public_channel, node_svid_2: svid);
+            {102}in(public_channel, (session_id_1: bitstring,deployment_request_1: bitstring,signed_request_1: bitstring,cert_tenant_1: cert));
+            {103}if cert_verify(cert_tenant_1,pk_ca) then
+            {104}let request_data_1: bitstring = tuple2_to_bitstring(session_id_1,deployment_request_1) in
+            {105}if verify(signed_request_1,request_data_1,pk_tenant) then
+            {106}event FPGAAllocated(deployment_request_1);
+            {107}new fpga_ecdhe_sk: key;
+            {109}new fpga_nonce_deploy: nonce;
+            {108}let fpga_ecdhe_pub_1: key = pk(fpga_ecdhe_sk) in
+            {110}let fpga_auth_data_1: bitstring = tuple3_to_bitstring(pk_to_bitstring(fpga_ecdhe_pub_1),nonce_to_bitstring(fpga_nonce_deploy),session_id_1) in
+            {111}let signed_fpga_auth_1: bitstring = sign(fpga_auth_data_1,sk_aik_1) in
+            {112}out(public_channel, (fpga_ecdhe_pub_1,fpga_nonce_deploy,signed_fpga_auth_1,pk(sk_aik_1)));
+            {113}in(public_channel, (tenant_ecdhe_pub_1: key,tenant_nonce_1: nonce));
+            {116}in(public_channel, (encrypted_bitstream_1: bitstring,tee_attestation_1: attestation));
+            {114}let shared_secret_1: bitstring = ecdhe(fpga_ecdhe_sk,tenant_ecdhe_pub_1) in
+            {115}let shared_key_1: key = kdf(shared_secret_1) in
+            {117}let bitstream: bitstring = sdec(encrypted_bitstream_1,shared_key_1) in
+            {119}new current_time_verify: timestamp;
+            {120}let tenant_id: bitstring = pk_to_bitstring(pk_tenant) in
+            {118}let design_hash: hash = sha384(bitstream) in
+            {121}if verify_attestation(tee_attestation_1,design_hash,validated,tenant_id,current_time_verify) then
+            {122}event FPGAReceivesBitstream(bitstream);
+            {123}event FPGAVerifiesBitstream(bitstream,design_hash);
+            {124}event FPGAConfigured(bitstream);
+            {125}new rid_1: region_id;
+            {126}new region_nonce: nonce;
+            {127}let k_region: key = hkdf(sk_aik_1,tuple3_to_bitstring(region_to_bitstring(rid_1),nonce_to_bitstring(region_nonce),fpga_serial_2)) in
+            {128}event RegionKeyGenerated(rid_1,k_region);
+            {129}out(ps_pl_channel, (rid_1,k_region));
+            {130}in(ps_pl_channel, encrypted_request: bitstring);
+            {131}let (request_type: bitstring,workload_nonce: nonce,request_rid: region_id) = sdec(encrypted_request,k_region) in
+            {132}if (request_rid = rid_1) then
+            {133}new challenge_nonce: nonce;
+            {134}event WorkloadChallengeIssued(rid_1,challenge_nonce);
+            {135}out(ps_pl_channel, senc(nonce_to_bitstring(challenge_nonce),k_region));
+            {136}in(ps_pl_channel, encrypted_response: bitstring);
+            {137}let (signed_response: bitstring,workload_pub_1: key) = sdec(encrypted_response,k_region) in
+            {138}let challenge_data: bitstring = tuple3_to_bitstring(nonce_to_bitstring(challenge_nonce),pk_to_bitstring(workload_pub_1),region_to_bitstring(rid_1)) in
+            {139}if verify(signed_response,challenge_data,workload_pub_1) then
+            {140}event WorkloadChallengeResponse(rid_1,challenge_nonce,workload_pub_1);
+            {141}let runtime_hash_1: hash = sha384(bitstream) in
+            {142}event RuntimeMeasurement(rid_1,runtime_hash_1);
+            {143}let evidence_data_1: bitstring = tuple3_to_bitstring(hash_to_bitstring(runtime_hash_1),pk_to_bitstring(workload_pub_1),region_to_bitstring(rid_1)) in
+            {144}let signed_evidence_1: bitstring = sign(evidence_data_1,sk_aik_1) in
+            {145}out(public_channel, (runtime_hash_1,workload_pub_1,node_svid_2,rid_1,tee_attestation_1,signed_evidence_1,fpga_serial_2,pk(sk_aik_1)))
+        ) | (
+            {146}!
+            {148}new tee_transport_sk: key;
+            {150}new tee_nonce_1: nonce;
+            {151}let tee_nonce_bits: bitstring = nonce_to_bitstring(tee_nonce_1) in
+            {149}let tee_transport_pk: key = pk(tee_transport_sk) in
+            {152}let tee_data_1: bitstring = tuple3_to_bitstring(pk_to_bitstring(tee_transport_pk),tee_nonce_bits,validated) in
+            {147}let sk_tee_1: key = sk_tee in
+            {153}let tee_attestation_2: bitstring = sign(tee_data_1,sk_tee_1) in
+            {154}event TEEProvidesAttestation(tee_transport_pk,tee_nonce_1,tee_attestation_2);
+            {155}out(public_channel, (tee_transport_pk,tee_nonce_1,tee_attestation_2));
+            {156}in(public_channel, (encrypted_design_1: bitstring,signed_nonce_1: bitstring,cert_tenant_2: cert,tenant_nonce_2: nonce,session_id_2: bitstring));
+            {157}if cert_verify(cert_tenant_2,pk_ca) then
+            {158}let verified_nonce_bits: bitstring = nonce_to_bitstring(tee_nonce_1) in
+            {159}if verify(signed_nonce_1,verified_nonce_bits,pk_tenant) then
+            {160}let (design_3: bitstring,signed_design_1: bitstring) = adec(encrypted_design_1,tee_transport_sk) in
+            {161}let design_data_1: bitstring = tuple3_to_bitstring(design_3,nonce_to_bitstring(tenant_nonce_2),session_id_2) in
+            {162}if verify(signed_design_1,design_data_1,pk_tenant) then
+            {163}event TEEReceivesDesign(design_3,tenant_nonce_2,session_id_2);
+            {164}let design_hash_1: hash = sha384(design_3) in
+            {165}event TEEValidatesDesign(design_3,design_hash_1);
+            {166}new current_time_1: timestamp;
+            {167}let tenant_id_1: bitstring = pk_to_bitstring(pk_tenant) in
+            {168}let validation_result_1: attestation = create_attestation(design_hash_1,validated,tenant_id_1,current_time_1) in
+            {169}out(public_channel, validation_result_1)
+        ) | (
+            {10}let pk_spiffe_ca: key = pk(sk_spiffe_ca) in
+            (
+                {170}!
+                {174}in(ps_pl_channel, (received_rid: region_id,k_region_1: key));
+                {172}let rid_2: region_id = region1 in
+                {175}if (received_rid = rid_2) then
+                {176}new workload_nonce_1: nonce;
+                {171}let sk_workload: key = sk_workload1 in
+                {178}event WorkloadAttestationRequested(rid_2,pk(sk_workload),workload_nonce_1);
+                {177}let request: bitstring = (workload_attestor_type,workload_nonce_1,rid_2) in
+                {179}out(ps_pl_channel, senc(request,k_region_1));
+                {180}in(ps_pl_channel, encrypted_challenge: bitstring);
+                {181}let challenge_nonce_1: bitstring = sdec(encrypted_challenge,k_region_1) in
+                {182}let challenge_data_1: bitstring = tuple3_to_bitstring(challenge_nonce_1,pk_to_bitstring(pk(sk_workload)),region_to_bitstring(rid_2)) in
+                {183}let response: bitstring = sign(challenge_data_1,sk_workload) in
+                {184}out(ps_pl_channel, senc((response,pk(sk_workload)),k_region_1));
+                {185}in(public_channel, workload_svid_1: svid);
+                {186}new tls_eph_sk: key;
+                {187}let tls_eph_pub: key = pk(tls_eph_sk) in
+                {188}out(public_channel, (workload_svid_1,tls_eph_pub));
+                {189}in(public_channel, (peer_svid: svid,peer_tls_pub: key));
+                {190}new current_time_2: timestamp;
+                {191}new peer_rid: region_id;
+                {192}new peer_hash: hash;
+                {194}new peer_workload_key: key;
+                {173}let fpga_serial_3: bitstring = fpga_serial in
+                {193}let peer_id: spiffe_id = create_workload_spiffe_id(fpga_serial_3,peer_rid,peer_hash) in
+                {195}if verify_svid(peer_svid,peer_id,peer_workload_key,current_time_2,pk_spiffe_ca) then
+                {198}let my_id: spiffe_id = create_workload_spiffe_id(fpga_serial_3,rid_2,sha384(fpga_serial_3)) in
+                {199}event mTLSEstablished(my_id,peer_id);
+                {200}new message: bitstring;
+                {196}let tls_secret: bitstring = ecdhe(tls_eph_sk,peer_tls_pub) in
+                {197}let session_key: key = kdf(tls_secret) in
+                {201}out(public_channel, senc(message,session_key))
+            ) | (
+                {202}!
+                {206}in(ps_pl_channel, (received_rid_1: region_id,k_region_2: key));
+                {204}let rid_3: region_id = region2 in
+                {207}if (received_rid_1 = rid_3) then
+                {208}new workload_nonce_2: nonce;
+                {203}let sk_workload_1: key = sk_workload2 in
+                {210}event WorkloadAttestationRequested(rid_3,pk(sk_workload_1),workload_nonce_2);
+                {209}let request_1: bitstring = (workload_attestor_type,workload_nonce_2,rid_3) in
+                {211}out(ps_pl_channel, senc(request_1,k_region_2));
+                {212}in(ps_pl_channel, encrypted_challenge_1: bitstring);
+                {213}let challenge_nonce_2: bitstring = sdec(encrypted_challenge_1,k_region_2) in
+                {214}let challenge_data_2: bitstring = tuple3_to_bitstring(challenge_nonce_2,pk_to_bitstring(pk(sk_workload_1)),region_to_bitstring(rid_3)) in
+                {215}let response_1: bitstring = sign(challenge_data_2,sk_workload_1) in
+                {216}out(ps_pl_channel, senc((response_1,pk(sk_workload_1)),k_region_2));
+                {217}in(public_channel, workload_svid_2: svid);
+                {218}new tls_eph_sk_1: key;
+                {219}let tls_eph_pub_1: key = pk(tls_eph_sk_1) in
+                {220}out(public_channel, (workload_svid_2,tls_eph_pub_1));
+                {221}in(public_channel, (peer_svid_1: svid,peer_tls_pub_1: key));
+                {222}new current_time_3: timestamp;
+                {223}new peer_rid_1: region_id;
+                {224}new peer_hash_1: hash;
+                {226}new peer_workload_key_1: key;
+                {205}let fpga_serial_4: bitstring = fpga_serial in
+                {225}let peer_id_1: spiffe_id = create_workload_spiffe_id(fpga_serial_4,peer_rid_1,peer_hash_1) in
+                {227}if verify_svid(peer_svid_1,peer_id_1,peer_workload_key_1,current_time_3,pk_spiffe_ca) then
+                {230}let my_id_1: spiffe_id = create_workload_spiffe_id(fpga_serial_4,rid_3,sha384(fpga_serial_4)) in
+                {231}event mTLSEstablished(my_id_1,peer_id_1);
+                {232}new message_1: bitstring;
+                {228}let tls_secret_1: bitstring = ecdhe(tls_eph_sk_1,peer_tls_pub_1) in
+                {229}let session_key_1: key = kdf(tls_secret_1) in
+                {233}out(public_channel, senc(message_1,session_key_1))
+            )
+        )
+    )
+)
+
+-- Query not attacker(secret_design[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (66 with conclusion selected). Queue: 22 rules.
+Starting query not attacker(secret_design[])
+RESULT not attacker(secret_design[]) is true.
+-- Query event(TEEValidatesDesign(d,h)) ==> event(TenantSendsDesign(d,n,sid_1)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 179 rules (64 with conclusion selected). Queue: 23 rules.
+Starting query event(TEEValidatesDesign(d,h)) ==> event(TenantSendsDesign(d,n,sid_1))
+goal reachable: b-event(TenantSendsDesign(secret_design[],tenant_nonce_3,session_id_3)) -> event(TEEValidatesDesign(secret_design[],sha384(secret_design[])))
+Abbreviations:
+tee_transport_sk_1 = tee_transport_sk[!1 = @sid]
+tee_nonce_2 = tee_nonce_1[!1 = @sid]
+tenant_nonce_3 = tenant_nonce[tee_attestation = sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[]),tee_nonce = tee_nonce_2,tee_pk = pk(tee_transport_sk_1),!1 = @sid_1]
+session_id_3 = session_id[tee_attestation = sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[]),tee_nonce = tee_nonce_2,tee_pk = pk(tee_transport_sk_1),!1 = @sid_1]
+RESULT event(TEEValidatesDesign(d,h)) ==> event(TenantSendsDesign(d,n,sid_1)) is true.
+-- Query event(TEEValidatesDesign(d,h)) ==> event(TEEReceivesDesign(d,n,sid_1)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 177 rules (64 with conclusion selected). Queue: 23 rules.
+Starting query event(TEEValidatesDesign(d,h)) ==> event(TEEReceivesDesign(d,n,sid_1))
+goal reachable: b-event(TEEReceivesDesign(secret_design[],tenant_nonce_3,session_id_3)) -> event(TEEValidatesDesign(secret_design[],sha384(secret_design[])))
+Abbreviations:
+tee_transport_sk_1 = tee_transport_sk[!1 = @sid]
+tee_nonce_2 = tee_nonce_1[!1 = @sid]
+tenant_nonce_3 = tenant_nonce[tee_attestation = sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[]),tee_nonce = tee_nonce_2,tee_pk = pk(tee_transport_sk_1),!1 = @sid_1]
+session_id_3 = session_id[tee_attestation = sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[]),tee_nonce = tee_nonce_2,tee_pk = pk(tee_transport_sk_1),!1 = @sid_1]
+RESULT event(TEEValidatesDesign(d,h)) ==> event(TEEReceivesDesign(d,n,sid_1)) is true.
+-- Query event(TEEReceivesDesign(d,n,sid_1)) ==> event(TenantSendsDesign(d,n,sid_1)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 179 rules (64 with conclusion selected). Queue: 23 rules.
+Starting query event(TEEReceivesDesign(d,n,sid_1)) ==> event(TenantSendsDesign(d,n,sid_1))
+goal reachable: b-event(TenantSendsDesign(secret_design[],tenant_nonce_3,session_id_3)) -> event(TEEReceivesDesign(secret_design[],tenant_nonce_3,session_id_3))
+Abbreviations:
+tee_transport_sk_1 = tee_transport_sk[!1 = @sid]
+tee_nonce_2 = tee_nonce_1[!1 = @sid]
+tenant_nonce_3 = tenant_nonce[tee_attestation = sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[]),tee_nonce = tee_nonce_2,tee_pk = pk(tee_transport_sk_1),!1 = @sid_1]
+session_id_3 = session_id[tee_attestation = sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[]),tee_nonce = tee_nonce_2,tee_pk = pk(tee_transport_sk_1),!1 = @sid_1]
+RESULT event(TEEReceivesDesign(d,n,sid_1)) ==> event(TenantSendsDesign(d,n,sid_1)) is true.
+-- Query event(TenantVerifiesTEE(tee_pk_1,tee_nonce_2,tee_attestation_3)) ==> event(TEEProvidesAttestation(tee_pk_1,tee_nonce_2,tee_attestation_3)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 177 rules (63 with conclusion selected). Queue: 19 rules.
+Starting query event(TenantVerifiesTEE(tee_pk_1,tee_nonce_2,tee_attestation_3)) ==> event(TEEProvidesAttestation(tee_pk_1,tee_nonce_2,tee_attestation_3))
+goal reachable: b-event(TEEProvidesAttestation(pk(tee_transport_sk_1),tee_nonce_2,sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[]))) -> event(TenantVerifiesTEE(pk(tee_transport_sk_1),tee_nonce_2,sign(tuple3_to_bitstring(pk_to_bitstring(pk(tee_transport_sk_1)),nonce_to_bitstring(tee_nonce_2),validated),sk_tee[])))
+Abbreviations:
+tee_transport_sk_1 = tee_transport_sk[!1 = @sid]
+tee_nonce_2 = tee_nonce_1[!1 = @sid]
+RESULT event(TenantVerifiesTEE(tee_pk_1,tee_nonce_2,tee_attestation_3)) ==> event(TEEProvidesAttestation(tee_pk_1,tee_nonce_2,tee_attestation_3)) is true.
+-- Query event(FPGAVerifiesBitstream(d,h)) ==> event(TEEValidatesDesign(d,h)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (66 with conclusion selected). Queue: 22 rules.
+Starting query event(FPGAVerifiesBitstream(d,h)) ==> event(TEEValidatesDesign(d,h))
+RESULT event(FPGAVerifiesBitstream(d,h)) ==> event(TEEValidatesDesign(d,h)) is true.
+-- Query event(NodeAttestationVerified(fpga_serial_5,aik_pub_1)) ==> event(NodeAttestationStarted(fpga_serial_5,aik_pub_1,n)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 175 rules (59 with conclusion selected). Queue: 21 rules.
+Starting query event(NodeAttestationVerified(fpga_serial_5,aik_pub_1)) ==> event(NodeAttestationStarted(fpga_serial_5,aik_pub_1,n))
+goal reachable: b-event(NodeAttestationStarted(fpga_serial[],pk(sk_aik[]),fpga_nonce_3)) -> event(NodeAttestationVerified(fpga_serial[],pk(sk_aik[])))
+Abbreviations:
+fpga_nonce_3 = fpga_nonce_2[!1 = @sid]
+RESULT event(NodeAttestationVerified(fpga_serial_5,aik_pub_1)) ==> event(NodeAttestationStarted(fpga_serial_5,aik_pub_1,n)) is true.
+-- Query not (event(NodeAttestationStarted(fpga_serial1,aik_pub1,n1)) && event(NodeAttestationVerified(fpga_serial2,aik_pub2)) && fpga_serial1 ≠ fpga_serial2) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (60 with conclusion selected). Queue: 21 rules.
+Starting query not (event(NodeAttestationStarted(fpga_serial1,aik_pub1,n1)) && event(NodeAttestationVerified(fpga_serial2,aik_pub2)) && fpga_serial1 ≠ fpga_serial2)
+RESULT not (event(NodeAttestationStarted(fpga_serial1,aik_pub1,n1)) && event(NodeAttestationVerified(fpga_serial2,aik_pub2)) && fpga_serial1 ≠ fpga_serial2) is true.
+-- Query event(WorkloadSVIDIssued(id,rid_4,k)) ==> event(WorkloadAttestationVerified(h,rid_4,k)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (66 with conclusion selected). Queue: 22 rules.
+Starting query event(WorkloadSVIDIssued(id,rid_4,k)) ==> event(WorkloadAttestationVerified(h,rid_4,k))
+RESULT event(WorkloadSVIDIssued(id,rid_4,k)) ==> event(WorkloadAttestationVerified(h,rid_4,k)) is true.
+-- Query event(KeyCompromised(rid_4,k)) ==> event(RegionKeyGenerated(rid_4,k)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (66 with conclusion selected). Queue: 22 rules.
+Starting query event(KeyCompromised(rid_4,k)) ==> event(RegionKeyGenerated(rid_4,k))
+RESULT event(KeyCompromised(rid_4,k)) ==> event(RegionKeyGenerated(rid_4,k)) is true.
+-- Query event(mTLSEstablished(id1,id2)) ==> event(WorkloadSVIDIssued(id1,rid1,k1)) && event(WorkloadSVIDIssued(id2,rid2,k2)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (66 with conclusion selected). Queue: 22 rules.
+Starting query event(mTLSEstablished(id1,id2)) ==> event(WorkloadSVIDIssued(id1,rid1,k1)) && event(WorkloadSVIDIssued(id2,rid2,k2))
+RESULT event(mTLSEstablished(id1,id2)) ==> event(WorkloadSVIDIssued(id1,rid1,k1)) && event(WorkloadSVIDIssued(id2,rid2,k2)) is true.
+-- Query event(WorkloadSVIDIssued(id,rid1,k1)) && event(WorkloadSVIDIssued(id,rid2,k2)) ==> rid1 = rid2 && k1 = k2 in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (66 with conclusion selected). Queue: 22 rules.
+Starting query event(WorkloadSVIDIssued(id,rid1,k1)) && event(WorkloadSVIDIssued(id,rid2,k2)) ==> rid1 = rid2 && k1 = k2
+RESULT event(WorkloadSVIDIssued(id,rid1,k1)) && event(WorkloadSVIDIssued(id,rid2,k2)) ==> rid1 = rid2 && k1 = k2 is true.
+-- Query event(RuntimeMeasurement(rid_4,h1)) && event(RuntimeMeasurement(rid_4,h2)) ==> h1 = h2 in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 176 rules (66 with conclusion selected). Queue: 22 rules.
+Starting query event(RuntimeMeasurement(rid_4,h1)) && event(RuntimeMeasurement(rid_4,h2)) ==> h1 = h2
+RESULT event(RuntimeMeasurement(rid_4,h1)) && event(RuntimeMeasurement(rid_4,h2)) ==> h1 = h2 is true.
+
+--------------------------------------------------------------
+Verification summary:
+
+Query not attacker(secret_design[]) is true.
+
+Query event(TEEValidatesDesign(d,h)) ==> event(TenantSendsDesign(d,n,sid_1)) is true.
+
+Query event(TEEValidatesDesign(d,h)) ==> event(TEEReceivesDesign(d,n,sid_1)) is true.
+
+Query event(TEEReceivesDesign(d,n,sid_1)) ==> event(TenantSendsDesign(d,n,sid_1)) is true.
+
+Query event(TenantVerifiesTEE(tee_pk_1,tee_nonce_2,tee_attestation_3)) ==> event(TEEProvidesAttestation(tee_pk_1,tee_nonce_2,tee_attestation_3)) is true.
+
+Query event(FPGAVerifiesBitstream(d,h)) ==> event(TEEValidatesDesign(d,h)) is true.
+
+Query event(NodeAttestationVerified(fpga_serial_5,aik_pub_1)) ==> event(NodeAttestationStarted(fpga_serial_5,aik_pub_1,n)) is true.
+
+Query not (event(NodeAttestationStarted(fpga_serial1,aik_pub1,n1)) && event(NodeAttestationVerified(fpga_serial2,aik_pub2)) && fpga_serial1 ≠ fpga_serial2) is true.
+
+Query event(WorkloadSVIDIssued(id,rid_4,k)) ==> event(WorkloadAttestationVerified(h,rid_4,k)) is true.
+
+Query event(KeyCompromised(rid_4,k)) ==> event(RegionKeyGenerated(rid_4,k)) is true.
+
+Query event(mTLSEstablished(id1,id2)) ==> event(WorkloadSVIDIssued(id1,rid1,k1)) && event(WorkloadSVIDIssued(id2,rid2,k2)) is true.
+
+Query event(WorkloadSVIDIssued(id,rid1,k1)) && event(WorkloadSVIDIssued(id,rid2,k2)) ==> rid1 = rid2 && k1 = k2 is true.
+
+Query event(RuntimeMeasurement(rid_4,h1)) && event(RuntimeMeasurement(rid_4,h2)) ==> h1 = h2 is true.
+
+--------------------------------------------------------------
+
